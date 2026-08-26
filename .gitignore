@@ -1,0 +1,73 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+
+# --- Packaging ---
+dist/
+build/
+wheels/
+*.whl
+*.tar.gz
+
+# --- Environments ---
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# --- uv ---
+# uv.lock IS committed: this ships as an application, so a reproducible
+# resolution is the point. Only uv's own scratch is ignored.
+.uv/
+
+# --- Test and type-check caches ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# --- Hubbleflow runtime state ---
+# The harness writes sessions, keys and skills under ~/.hubbleflow (or
+# HUBBLEFLOW_HOME). A local override pointed at the repo would drop them here.
+.hubbleflow/
+sessions.sqlite
+sessions.sqlite-*
+*.sqlite-journal
+
+# A workspace's own MCP declarations are personal -- they name local commands
+# and can carry tokens. The README documents the format instead.
+.mcp.json
+
+# --- Media ---
+# Demo clips are 15-26 MB each and git cannot delta-compress video, so they
+# would weigh on every clone forever. Attach them to a GitHub release and link
+# from the README's Demo section.
+videos/
+*.mp4
+*.mov
+*.mp3
+
+# --- Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini

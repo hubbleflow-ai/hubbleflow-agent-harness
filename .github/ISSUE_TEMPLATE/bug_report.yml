@@ -1,0 +1,56 @@
+name: Bug report
+description: Something behaves differently from what the README promises
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a security issue — an approval bypassed, the sandbox escaped,
+        a key leaked — please use
+        [Security Advisories](../../security/advisories/new) instead.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what happened, and what you expected instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options: [Gemini, NVIDIA, Ollama, Mesh LLM, "Not provider-specific"]
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The exact id, as `/model` shows it.
+      placeholder: "gemma4:12b"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Platform
+      options: [macOS, Linux, Windows]
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`hubbleflow --version`, or the commit."
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Any error, traceback, or transcript. Redact your keys.
+      render: shell

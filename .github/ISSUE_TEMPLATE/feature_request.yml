@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest something the harness should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that's awkward or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like
+      description: >
+        If it touches a provider, say which. Provider quirks usually belong in
+        `profile.py` or that provider's constructor rather than the system prompt.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
