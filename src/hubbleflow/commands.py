@@ -75,11 +75,13 @@ _PROVIDER_LABELS = {
     model_registry.NVIDIA: ("NVIDIA", "hosted NIM, billed to your NVIDIA key"),
     model_registry.MESH: ("Mesh", "pooled across the mesh, no per-token cost"),
     model_registry.OLLAMA: ("Ollama", "pulled locally, runs offline"),
-    model_registry.FREETOKEN: ("FreeToken", "MoE models on your own GPU"),
+    **{s.provider: (s.label, s.blurb) for s in model_registry.LOCAL_SERVERS},
 }
 
 _CLOUD = [model_registry.GEMINI, model_registry.NVIDIA]
-_SELF_HOSTED = [model_registry.MESH, model_registry.FREETOKEN, model_registry.OLLAMA]
+_SELF_HOSTED = [model_registry.MESH,
+                *[s.provider for s in model_registry.LOCAL_SERVERS],
+                model_registry.OLLAMA]
 _ALL = [*_CLOUD, *_SELF_HOSTED]
 
 # NVIDIA lists well over a hundred; showing them all buries everything else.
@@ -160,6 +162,8 @@ async def _show_models(app: "Hubbleflow", providers: list[str], needle: str = ""
 def _names_for(provider: str) -> list[tuple[str, str]]:
     if provider == model_registry.MESH:
         return [(name, _context_note(ctx)) for name, ctx in model_registry.list_mesh_details()]
+    if (server := model_registry.local_server(provider)) is not None:
+        return [(name, _context_note(ctx)) for name, ctx in model_registry.list_server_details(server)]
     if provider == model_registry.OLLAMA:
         return [(name, f"{size} GB" if size else "") for name, size in model_registry.list_ollama_details()]
     if provider == model_registry.NVIDIA:
@@ -316,9 +320,64 @@ async def _usage(app: "Hubbleflow", args: str) -> str:
             saved = _saving(app.config.model_name, usage) - stats.storage_cost()
             detail.append(f"  ·  caching net ${saved:+.4f}", style="hf.ok" if saved > 0 else "hf.warn")
         app.transcript.print(detail)
+    if (window := await _window_line(app)) is not None:
+        app.transcript.print(window)
     app.transcript.print(Text(f"  session {app.config.thread_id}", style="hf.faint"))
     app.transcript.print()
     return CONTINUE
+
+
+# Compaction replaces the history with a message that opens this way. Matching
+# on it is how a session can say whether it has summarised, which the sent and
+# received counters cannot -- those are cumulative spend, not transcript size.
+_SUMMARY_MARKER = "here is a summary of the conversation to date"
+
+
+async def _window_line(app: "Hubbleflow") -> Text | None:
+    """How much of the window the conversation holds, and whether it compacted.
+
+    `sent` counts every token of every turn, so it says nothing about how large
+    the conversation currently is -- on a local model most of it is the system
+    prompt, resent each turn. This is the number people actually mean when they
+    ask whether compaction has run.
+    """
+    from hubbleflow.agent import _summarize_after
+
+    try:
+        state = await app.harness.graph.aget_state(
+            {"configurable": {"thread_id": app.config.thread_id}}
+        )
+        messages = (state.values or {}).get("messages") or []
+    except Exception:
+        return None
+    if not messages:
+        return None
+
+    # Four characters a token is rough, and right enough to answer "how close
+    # am I" without pulling in a tokeniser for every provider.
+    chars = 0
+    compactions = 0
+    for message in messages:
+        content = getattr(message, "content", "")
+        text = content if isinstance(content, str) else json.dumps(content)
+        chars += len(text)
+        if text[:80].lower().startswith(_SUMMARY_MARKER):
+            compactions += 1
+
+    held = chars // 4
+    trigger = _summarize_after(app.config)
+    share = held / trigger * 100 if trigger else 0
+
+    line = Text("  ", style="hf.muted")
+    line.append(f"~{held:,}", style="default")
+    line.append(f" / {trigger:,} tokens before compaction", style="hf.muted")
+    line.append(f"  ({share:.0f}%)", style="hf.warn" if share > 75 else "hf.faint")
+    line.append("  ·  ", style="hf.faint")
+    if compactions:
+        line.append(f"compacted {compactions}×", style="hf.ok")
+    else:
+        line.append("not yet compacted", style="hf.faint")
+    return line
 
 
 def _cost(model: str, usage) -> float | None:

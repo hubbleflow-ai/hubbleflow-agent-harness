@@ -20,7 +20,7 @@ from hubbleflow import agent as agent_module
 from hubbleflow import commands as command_module
 from hubbleflow import mcp as mcp_module
 from hubbleflow import config as config_module
-from hubbleflow.config import CONFIG_DIR, Config
+from hubbleflow.config import CONFIG_DIR, FREETOKEN, MESH, OLLAMA, Config
 from hubbleflow.permissions import PermissionPolicy
 from hubbleflow.ui.approve import ALWAYS, APPROVE, REJECT, ApprovalPrompt, choices_for
 from hubbleflow.ui.banner import render_banner
@@ -207,7 +207,7 @@ class Hubbleflow:
             return None
         except Exception as error:  # a bad key, a rate limit, a model that doesn't exist
             self.transcript.flush()
-            self.transcript.error(_explain(error))
+            self.transcript.error(_explain(error, self.config.provider))
             return None
         finally:
             restore()
@@ -487,11 +487,24 @@ def looks_like_leaked_tool_call(text: str) -> bool:
     return any(marker in text for marker in _LEAKED_CALL_MARKERS)
 
 
-def _explain(error: Exception) -> str:
+def _explain(error: Exception, provider: str = "") -> str:
     text = str(error) or error.__class__.__name__
     lowered = text.lower()
     name = error.__class__.__name__
 
+    # The fix points in opposite directions: a local window can be made bigger,
+    # a hosted one can't, so there the answer is to compact sooner instead.
+    if "context" in lowered and ("exceed" in lowered or "too long" in lowered or "maximum" in lowered):
+        if provider in (OLLAMA, MESH, FREETOKEN):
+            return (
+                f"{text}\n  The window is smaller than this turn needs. Raise it with "
+                "HUBBLEFLOW_NUM_CTX=65536, or pick a model that serves a longer context."
+            )
+        return (
+            f"{text}\n  The conversation outgrew the model's window before compaction ran. "
+            f"Lower HUBBLEFLOW_COMPACT_AFTER (currently "
+            f"{config_module.compact_after(provider):,}) so it summarises sooner, or /clear to start fresh."
+        )
     if "timeout" in lowered or "timeout" in name.lower():
         return (
             f"{text}\n  The request took longer than the {config_module.request_timeout():.0f}s limit. "

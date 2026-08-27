@@ -14,8 +14,9 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from hubbleflow import config as config_module
 from hubbleflow.backend import ForgivingFilesystemBackend
 from hubbleflow import mcp as mcp_module
+from hubbleflow import models as models_module
 from hubbleflow.cache import CacheStats, CachingChatGoogle, GeminiCache
-from hubbleflow.config import FREETOKEN, GEMINI, MESH, NVIDIA, OLLAMA, Config
+from hubbleflow.config import GEMINI, MESH, NVIDIA, OLLAMA, Config
 from hubbleflow.permissions import PermissionPolicy
 from hubbleflow.profile import register_gemini_profile
 from hubbleflow.tools.shell import ShellSession, make_shell_tool
@@ -133,7 +134,7 @@ def _summarize_after(config: Config) -> int:
     than a negative one, and will simply compact often.
     """
     if not config.is_local:
-        return config_module.compact_after()
+        return config_module.compact_after(config.provider)
     window = config_module.context_window()
     room = window - _PROMPT_OVERHEAD_TOKENS - config_module.max_output_tokens()
     return max(room, window // 4)
@@ -233,8 +234,8 @@ def _build_model(config: Config, stats: CacheStats) -> tuple[object, GeminiCache
         return _nvidia_model(config), None
     if config.provider == MESH:
         return _mesh_model(config), None
-    if config.provider == FREETOKEN:
-        return _freetoken_model(config), None
+    if (server := models_module.local_server(config.provider)) is not None:
+        return _local_server_model(config, server), None
     if config.provider == OLLAMA:
         return _ollama_model(config), None
     if config.cache and config.provider == GEMINI:
@@ -264,22 +265,20 @@ def _mesh_model(config: Config) -> object:
     )
 
 
-def _freetoken_model(config: Config) -> object:
-    """FreeToken serves MoE models from consumer hardware, OpenAI-compatible.
+def _local_server_model(config: Config, server) -> object:
+    """vLLM, llama.cpp and FreeToken all speak the OpenAI protocol.
 
-    Nothing here is FreeToken-specific -- it speaks the same protocol the mesh
-    does, so the same client covers it. Worth keeping separate anyway: it is a
-    different thing to point at, and folding it into `_mesh_model` would mean a
-    function whose name lied about half its callers.
+    Nothing here is specific to any of them -- the same client covers all three,
+    and the only thing that varies is the base URL, which the server table
+    already holds. The key is required by the client and ignored by every one
+    of these servers.
     """
     from langchain_openai import ChatOpenAI
 
-    from hubbleflow.models import freetoken_url
-
     return ChatOpenAI(
         model=config.model_name,
-        base_url=freetoken_url(),
-        api_key="freetoken",
+        base_url=models_module.server_url(server),
+        api_key=server.provider,
         timeout=config_module.request_timeout(),
         max_tokens=config_module.max_output_tokens(),
     )

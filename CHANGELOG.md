@@ -24,9 +24,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   standalone HTML node view with `--graph`.
 - **`/skills`** lists loaded skills, prints one, and scaffolds a new project
   skill with `/skills new <name>`.
-- **FreeToken** joins Gemini, NVIDIA, Mesh and Ollama. It serves MoE models from
-  a consumer GPU over an OpenAI-compatible API on `localhost:1919`, so it needed
-  a client and a discovery call, nothing more. `FREETOKEN_URL` moves it.
+- **vLLM, llama.cpp and FreeToken** join Gemini, NVIDIA, Mesh and Ollama. All
+  three speak the OpenAI protocol on your own hardware, so they share one
+  discovery path and one client and differ only by a row in
+  `models.LOCAL_SERVERS` — adding a fourth is that row. `VLLM_URL`,
+  `LLAMACPP_URL` and `FREETOKEN_URL` move them, including to another machine.
 - Ollama sessions now request an explicit context window. Ollama sizes it from
   free VRAM when nobody asks and settles on 4096 for a large model, which the
   system prompt and tool declarations overrun before the first user turn. The
@@ -38,6 +40,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and this changelog.
 
 ### Changed
+
+- NVIDIA sessions compact at 96k rather than 256k. Its `/models` endpoint returns
+  no context length, so nothing can be derived from it — and most NIM endpoints
+  are 128k, which the old default would have overflowed before compaction ever
+  ran. `HUBBLEFLOW_COMPACT_AFTER` still overrides.
+- `/usage` reports how much of the window the conversation holds and whether it
+  has compacted. The sent counter is cumulative spend, so it never answered that.
+- A context-size failure now says which knob to turn, and the answer differs by
+  provider: a local window can be raised, a hosted one can only compact sooner.
 
 - Hosted sessions compact at 256k tokens rather than 170k, and the number is now
   `HUBBLEFLOW_COMPACT_AFTER`. A million-token window has no reason to discard

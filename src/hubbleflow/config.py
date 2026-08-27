@@ -15,8 +15,13 @@ GEMINI = "google_genai"
 OLLAMA = "ollama"
 NVIDIA = "nvidia"
 MESH = "mesh"
+# Three servers that speak the OpenAI protocol on your own hardware. They
+# differ only in where they listen, so the harness treats them as one shape --
+# see `models.LOCAL_SERVERS`.
 FREETOKEN = "freetoken"
-PROVIDERS = (GEMINI, "google_vertexai", OLLAMA, NVIDIA, MESH, FREETOKEN)
+VLLM = "vllm"
+LLAMACPP = "llamacpp"
+PROVIDERS = (GEMINI, "google_vertexai", OLLAMA, NVIDIA, MESH, FREETOKEN, VLLM, LLAMACPP)
 CLOUD_PROVIDERS = (GEMINI, NVIDIA)
 
 # Check `/models` before pinning a different id -- an AI Studio key does not
@@ -37,10 +42,14 @@ DEFAULT_NUM_CTX = 32768
 # rather than all of them concatenated: a repo with both AGENTS.md and CLAUDE.md
 # almost always has the same text in each -- OpenWiki writes its pointer block
 # into both -- so reading every one would just repeat it. Most specific first.
-# Where a hosted model compacts. Gemini serves a million tokens and NVIDIA's
-# larger models serve hundreds of thousands, so compacting early throws away
-# context that was already paid for and still fits.
+# Where a hosted model compacts. Gemini serves a million tokens, so compacting
+# early there throws away context that was already paid for and still fits.
 DEFAULT_COMPACT_AFTER = 256_000
+# NVIDIA is a catalogue, not a model: most NIM endpoints are 128k and a few are
+# 32k. Its `/models` returns id and owner and nothing about the window, so there
+# is nothing to derive from -- the default has to assume the common case rather
+# than the best one, and `HUBBLEFLOW_COMPACT_AFTER` covers the rest.
+DEFAULT_COMPACT_AFTER_NVIDIA = 96_000
 
 # Where OpenWiki writes its bundle. Any OKF producer can be pointed at instead
 # with HUBBLEFLOW_KNOWLEDGE; the format is a spec, not one tool's output.
@@ -100,7 +109,7 @@ class Config:
     @property
     def is_local(self) -> bool:
         """Runs on hardware you control, so nothing is billed per token."""
-        return self.provider in (OLLAMA, MESH, FREETOKEN)
+        return self.provider in (OLLAMA, MESH, FREETOKEN, VLLM, LLAMACPP)
 
     @classmethod
     def load(
@@ -152,7 +161,7 @@ def max_output_tokens() -> int:
         return DEFAULT_MAX_TOKENS
 
 
-def compact_after() -> int:
+def compact_after(provider: str = GEMINI) -> int:
     """Transcript size, in tokens, at which a hosted session compacts.
 
     Local sessions ignore this: their trigger is derived from the window they
@@ -161,7 +170,7 @@ def compact_after() -> int:
     try:
         return int(os.environ["HUBBLEFLOW_COMPACT_AFTER"])
     except (KeyError, ValueError):
-        return DEFAULT_COMPACT_AFTER
+        return DEFAULT_COMPACT_AFTER_NVIDIA if provider == NVIDIA else DEFAULT_COMPACT_AFTER
 
 
 def context_files() -> tuple[str, ...]:

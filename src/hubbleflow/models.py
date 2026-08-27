@@ -14,9 +14,16 @@ from functools import lru_cache
 import httpx
 
 from hubbleflow import config as config_module
-from hubbleflow.config import FREETOKEN, GEMINI, MESH, NVIDIA, OLLAMA, PROVIDERS
-
-from hubbleflow.config import FREETOKEN, GEMINI, MESH, NVIDIA, OLLAMA, PROVIDERS
+from hubbleflow.config import (
+    FREETOKEN,
+    GEMINI,
+    LLAMACPP,
+    MESH,
+    NVIDIA,
+    OLLAMA,
+    PROVIDERS,
+    VLLM,
+)
 
 OLLAMA_TIMEOUT = 1.5
 GEMINI_TIMEOUT = 10.0
@@ -234,28 +241,69 @@ def list_mesh_details() -> list[tuple[str, int]]:
     return sorted(set(found))
 
 
-FREETOKEN_URL = "http://localhost:1919/v1"
-FREETOKEN_TIMEOUT = 2.0
+@dataclass(frozen=True, slots=True)
+class LocalServer:
+    """A server you run yourself that speaks the OpenAI protocol.
 
-
-def freetoken_url() -> str:
-    """Where a FreeToken server exposes its OpenAI-compatible API.
-
-    It serves an Anthropic-shaped API on the same port, but there is no reason
-    to prefer it: the OpenAI client is already here for the mesh.
+    vLLM, llama.cpp's `llama-server` and FreeToken are different programs with
+    different reasons to exist, but from here they are the same thing: a base
+    URL with `/models` and `/chat/completions` behind it. Giving each its own
+    discovery function and its own client would be three copies of one idea,
+    so they get one of each and differ only in this table.
     """
-    return os.getenv("FREETOKEN_URL", FREETOKEN_URL).rstrip("/")
+
+    provider: str
+    label: str
+    blurb: str
+    default_url: str
+    env: str
+    start: str
 
 
-def list_freetoken() -> list[str]:
-    """Models a local FreeToken server is holding, or nothing if it isn't up."""
-    return [name for name, _ in list_freetoken_details()]
+# Default ports are each project's own: vLLM serves 8000, llama-server 8080,
+# FreeToken 1919. Nothing here assumes only one of them is running.
+LOCAL_SERVERS: tuple[LocalServer, ...] = (
+    LocalServer(
+        FREETOKEN, "FreeToken", "MoE models on your own GPU",
+        "http://localhost:1919/v1", "FREETOKEN_URL", "ft serve --model <path>",
+    ),
+    LocalServer(
+        VLLM, "vLLM", "high-throughput serving, one model per server",
+        "http://localhost:8000/v1", "VLLM_URL", "vllm serve <model>",
+    ),
+    LocalServer(
+        LLAMACPP, "llama.cpp", "llama-server, a GGUF straight off disk",
+        "http://localhost:8080/v1", "LLAMACPP_URL", "llama-server -m <model.gguf>",
+    ),
+)
+
+SERVER_TIMEOUT = 2.0
+
+_BY_PROVIDER = {server.provider: server for server in LOCAL_SERVERS}
 
 
-def list_freetoken_details() -> list[tuple[str, int]]:
-    """FreeToken models as (name, context length); context is 0 when unstated."""
+def local_server(provider: str) -> LocalServer | None:
+    return _BY_PROVIDER.get(provider)
+
+
+def server_url(server: LocalServer) -> str:
+    """Where it listens. The env var moves it, including to another machine."""
+    return os.getenv(server.env, server.default_url).rstrip("/")
+
+
+def list_server(server: LocalServer) -> list[str]:
+    """Models it is holding, or nothing at all when it isn't running."""
+    return [name for name, _ in list_server_details(server)]
+
+
+def list_server_details(server: LocalServer) -> list[tuple[str, int]]:
+    """Models as (name, context length); context is 0 when unadvertised.
+
+    vLLM reports `max_model_len`, FreeToken `context_length`, llama.cpp neither.
+    All three are optional in the OpenAI schema, so a missing one is normal.
+    """
     try:
-        response = httpx.get(f"{freetoken_url()}/models", timeout=FREETOKEN_TIMEOUT)
+        response = httpx.get(f"{server_url(server)}/models", timeout=SERVER_TIMEOUT)
         response.raise_for_status()
         payload = response.json()
     except Exception:
@@ -266,15 +314,22 @@ def list_freetoken_details() -> list[tuple[str, int]]:
         name = entry.get("id")
         if not name or any(m in name.lower() for m in _NOT_CHAT):
             continue
-        context = int(entry.get("context_length") or (entry.get("metadata") or {}).get("context_length") or 0)
-        found.append((name, context))
+        meta = entry.get("metadata") or {}
+        context = int(
+            entry.get("max_model_len")
+            or entry.get("context_length")
+            or meta.get("context_length")
+            or 0
+        )
+        found.append((str(name), context))
     return sorted(set(found))
 
 
 def catalogue() -> list[tuple[str, list[str]]]:
     """Everything reachable right now, grouped by provider."""
     return [(GEMINI, list_gemini()), (NVIDIA, list_nvidia()), (MESH, list_mesh()),
-            (FREETOKEN, list_freetoken()), (OLLAMA, list_ollama())]
+            *[(server.provider, list_server(server)) for server in LOCAL_SERVERS],
+            (OLLAMA, list_ollama())]
 
 
 def resolve(spec: str) -> str:
@@ -293,10 +348,13 @@ def resolve(spec: str) -> str:
     if spec in _mesh_models():
         return f"{MESH}:{spec}"
 
-    # Same reasoning as the mesh: a FreeToken model id carries no marker, so the
-    # only way to recognise one is to ask the server what it has loaded.
-    if spec in _freetoken_models():
-        return f"{FREETOKEN}:{spec}"
+    # Same reasoning as the mesh: a served model id carries no marker, so the
+    # only way to recognise one is to ask each server what it has loaded. First
+    # match wins, and the order is the table's -- running two servers with the
+    # same model on both is not a case worth disambiguating.
+    for server in LOCAL_SERVERS:
+        if spec in _server_models(server.provider):
+            return f"{server.provider}:{spec}"
 
     local = _local_models()
     if spec in local:
@@ -328,9 +386,10 @@ def _mesh_models() -> frozenset[str]:
     return frozenset(list_mesh())
 
 
-@lru_cache(maxsize=1)
-def _freetoken_models() -> frozenset[str]:
-    return frozenset(list_freetoken())
+@lru_cache(maxsize=len(LOCAL_SERVERS))
+def _server_models(provider: str) -> frozenset[str]:
+    server = _BY_PROVIDER[provider]
+    return frozenset(list_server(server))
 
 
 @lru_cache(maxsize=1)
@@ -344,4 +403,4 @@ def forget_local_models() -> None:
     """Drop cached listings, so a freshly pulled or newly meshed model shows up."""
     _local_models.cache_clear()
     _mesh_models.cache_clear()
-    _freetoken_models.cache_clear()
+    _server_models.cache_clear()

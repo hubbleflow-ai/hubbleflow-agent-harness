@@ -43,7 +43,7 @@ SSD runs the same loop Gemini does, and switching between them is one command.
 | Auto-compaction | sized to the model's own window, not a fixed number |
 | WebSearch / WebFetch | `tools/web.py` — grounded search, pages boiled down to markdown |
 | MCP servers | `mcp.py`, reading `.mcp.json` in Claude Code's format |
-| Model switching | Gemini, NVIDIA, Mesh, FreeToken and Ollama, discovered live |
+| Model switching | seven providers, local and hosted, discovered live |
 | Skills | a `web-research` skill in `~/.hubbleflow/skills`, plus `/skills` to add more |
 | `CLAUDE.md` | `AGENTS.md`, `CLAUDE.md` or `HUBBLEFLOW.md`, read from the workspace root |
 | — | `/knowledge`: an OKF bundle mounted read-only, with a lookup tool |
@@ -127,14 +127,14 @@ out — `Ctrl+C` never exits; it cancels the running turn.
 
 ## Models
 
-Five providers, discovered live rather than from a hardcoded list:
+Seven providers, discovered live rather than from a hardcoded list:
 
 | | | key |
 |---|---|---|
 | **Gemini** | Google's hosted models | `GOOGLE_API_KEY` |
 | **NVIDIA** | hosted NIM endpoints | `NVIDIA_API_KEY` |
 | **Mesh** | [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) pooling GPUs across machines | none |
-| **FreeToken** | [FreeToken](https://github.com/FlashML-org/FreeToken) serving MoE models on your own GPU | none |
+| **vLLM**, **llama.cpp**, **FreeToken** | servers you run yourself, on your own hardware | none |
 | **Ollama** | whatever you've pulled | none |
 
 `/models` lists everything, `/local` is the self-hosted pair (Ollama and Mesh),
@@ -186,22 +186,25 @@ about 5k tokens, so anything under 8k can't work.
 One thing worth being deliberate about: in mesh mode your prompts, and the file
 contents the agent reads, are processed on other people's machines.
 
-### FreeToken
+### Servers you run yourself
 
-[FreeToken](https://github.com/FlashML-org/FreeToken) is an edge-native serving
-engine for Mixture-of-Experts models -- it runs frontier-scale open weights on a
-single consumer GPU by streaming experts between VRAM and host memory. Start it
-and the harness finds it:
+Three of them, and the harness treats them as one shape: a base URL with the
+OpenAI protocol behind it. Start any of them and `/local` finds it.
 
-```bash
-uv pip install "freetoken[accel]"
-ft serve --model ~/models/Qwen3.6-35B-A3B
-```
+| | Start it with | Default | Move it with |
+|---|---|---|---|
+| **vLLM** | `vllm serve <model>` | `:8000/v1` | `VLLM_URL` |
+| **llama.cpp** | `llama-server -m <model.gguf>` | `:8080/v1` | `LLAMACPP_URL` |
+| **[FreeToken](https://github.com/FlashML-org/FreeToken)** | `ft serve --model <path>` | `:1919/v1` | `FREETOKEN_URL` |
 
-It speaks the OpenAI protocol on `http://localhost:1919/v1`, so there was
-nothing to integrate beyond pointing a client at it. `FREETOKEN_URL` moves it,
-which is how you use a server on another machine -- worth knowing, because
-FreeToken targets NVIDIA RTX cards and there is no CUDA on an Apple Silicon Mac.
+There is no integration to write for any of them — an OpenAI client aimed at the
+right port is the whole thing, which is why they share one code path and differ
+only by a row in `models.LOCAL_SERVERS`. Adding a fourth is that row.
+
+Running two at once is fine; they're discovered independently and the ports
+don't collide. The `_URL` variables also point at another machine, which matters
+for FreeToken in particular — it targets NVIDIA RTX cards, and there is no CUDA
+on an Apple Silicon Mac.
 
 ### Ollama
 
@@ -246,8 +249,14 @@ to be summarised. Where that happens depends on the window:
 
 | | Compacts at |
 |---|---|
-| Gemini, NVIDIA | 256k tokens (`HUBBLEFLOW_COMPACT_AFTER`) |
-| Ollama, Mesh, FreeToken | derived from the window, ~18.5k at the 32k default |
+| Gemini | 256k tokens |
+| NVIDIA | 96k — its `/models` advertises no context length, and most NIM endpoints are 128k, a few 32k. The default has to assume the common case |
+| Ollama, Mesh, vLLM, llama.cpp, FreeToken | derived from the window, ~18.5k at the 32k default |
+
+`HUBBLEFLOW_COMPACT_AFTER` overrides the hosted numbers. `/usage` shows how much
+of the window the conversation currently holds and whether it has compacted —
+the sent counter can't tell you that, since it's cumulative spend rather than
+transcript size.
 
 The local number isn't a fraction picked by feel. Compacting is itself a model
 call: it resends the transcript and writes a summary, so the trigger has to
@@ -440,6 +449,8 @@ Ollama, Mesh and FreeToken need no key at all.
 | `MESH_LLM_URL` | `http://localhost:9337/v1` |
 | `MESH_LLM_CONSOLE_PORT` | the port `/mesh` reads a node's posture from |
 | `FREETOKEN_URL` | `http://localhost:1919/v1` |
+| `VLLM_URL` | `http://localhost:8000/v1` |
+| `LLAMACPP_URL` | `http://localhost:8080/v1` |
 | `NVIDIA_BASE_URL` | NVIDIA's own endpoint |
 | `HUBBLEFLOW_MESH_ALLOW_HOST` | `1` uses a mesh node that also contributes compute |
 
