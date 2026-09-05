@@ -15,13 +15,14 @@ GEMINI = "google_genai"
 OLLAMA = "ollama"
 NVIDIA = "nvidia"
 MESH = "mesh"
-# Three servers that speak the OpenAI protocol on your own hardware. They
+# Four servers that speak the OpenAI protocol on your own hardware. They
 # differ only in where they listen, so the harness treats them as one shape --
 # see `models.LOCAL_SERVERS`.
 FREETOKEN = "freetoken"
 VLLM = "vllm"
 LLAMACPP = "llamacpp"
-PROVIDERS = (GEMINI, "google_vertexai", OLLAMA, NVIDIA, MESH, FREETOKEN, VLLM, LLAMACPP)
+MLX = "mlx"
+PROVIDERS = (GEMINI, "google_vertexai", OLLAMA, NVIDIA, MESH, FREETOKEN, VLLM, LLAMACPP, MLX)
 CLOUD_PROVIDERS = (GEMINI, NVIDIA)
 
 # Check `/models` before pinning a different id -- an AI Studio key does not
@@ -121,7 +122,7 @@ class Config:
     @property
     def is_local(self) -> bool:
         """Runs on hardware you control, so nothing is billed per token."""
-        return self.provider in (OLLAMA, MESH, FREETOKEN, VLLM, LLAMACPP)
+        return self.provider in (OLLAMA, MESH, FREETOKEN, VLLM, LLAMACPP, MLX)
 
     @classmethod
     def load(

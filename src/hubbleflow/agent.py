@@ -270,9 +270,9 @@ def _mesh_model(config: Config) -> object:
 
 
 def _local_server_model(config: Config, server) -> object:
-    """vLLM, llama.cpp and FreeToken all speak the OpenAI protocol.
+    """vLLM, llama.cpp, FreeToken and MLX all speak the OpenAI protocol.
 
-    Nothing here is specific to any of them -- the same client covers all three,
+    Nothing here is specific to any of them -- the same client covers all four,
     and the only thing that varies is the base URL, which the server table
     already holds. The key is required by the client and ignored by every one
     of these servers.
