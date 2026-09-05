@@ -19,6 +19,7 @@ from hubbleflow.config import (
     GEMINI,
     LLAMACPP,
     MESH,
+    MLX,
     NVIDIA,
     OLLAMA,
     PROVIDERS,
@@ -261,7 +262,7 @@ class LocalServer:
 
 
 # Default ports are each project's own: vLLM serves 8000, llama-server 8080,
-# FreeToken 1919. Nothing here assumes only one of them is running.
+# FreeToken 1919, MLX 5001. Nothing here assumes only one of them is running.
 LOCAL_SERVERS: tuple[LocalServer, ...] = (
     LocalServer(
         FREETOKEN, "FreeToken", "MoE models on your own GPU",
@@ -274,6 +275,10 @@ LOCAL_SERVERS: tuple[LocalServer, ...] = (
     LocalServer(
         LLAMACPP, "llama.cpp", "llama-server, a GGUF straight off disk",
         "http://localhost:8080/v1", "LLAMACPP_URL", "llama-server -m <model.gguf>",
+    ),
+    LocalServer(
+        MLX, "MLX", "Apple Silicon optimized local server",
+        "http://localhost:5001/v1", "MLX_URL", "python -m mlx_lm.server --model <path>",
     ),
 )
 

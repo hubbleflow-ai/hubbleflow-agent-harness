@@ -29,6 +29,7 @@ def local(monkeypatch):
         ("nvidia:meta/muse-glimmer-30b", "nvidia:meta/muse-glimmer-30b"),
         ("ollama:gemma4:12b", "ollama:gemma4:12b"),     # already qualified
         ("google_genai:gemini-3.5-flash-lite", "google_genai:gemini-3.5-flash-lite"),
+        ("mlx:mlx-community/Llama-3.2-3B-Instruct-4bit", "mlx:mlx-community/Llama-3.2-3B-Instruct-4bit"),
     ],
 )
 def test_resolve(local, typed, expected):
@@ -38,6 +39,10 @@ def test_resolve(local, typed, expected):
 def test_split_keeps_colons_in_the_tag():
     assert models.split("ollama:gemma4:12b") == ("ollama", "gemma4:12b")
     assert models.split("google_genai:gemini-2.5-pro") == ("google_genai", "gemini-2.5-pro")
+    assert models.split("mlx:mlx-community/Llama-3.2-3B-Instruct-4bit") == (
+        "mlx",
+        "mlx-community/Llama-3.2-3B-Instruct-4bit",
+    )
 
 
 def test_unknown_bare_name_falls_through_to_gemini(local):
