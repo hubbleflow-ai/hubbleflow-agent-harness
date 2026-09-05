@@ -58,7 +58,7 @@ artifacts = ["src/hubbleflow/skills/**/*.md"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/hubbleflow", "tests", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md",
-           "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
+           "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "docs",
            "install.sh", "install.ps1", "uninstall.sh", "uninstall.ps1"]
 
 [dependency-groups]

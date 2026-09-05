@@ -36,6 +36,9 @@ class Concept:
     """One page of a bundle, reduced to the fields worth querying."""
 
     path: str
+    # Which bundle this came from, so a merged view can say where to read it and
+    # a link only resolves against pages from the same tree.
+    origin: str = ""
     type: str = ""
     title: str = ""
     description: str = ""
@@ -123,17 +126,32 @@ class Bundle:
         descriptor. Only the ones that resolve to a page in this bundle become
         edges; the rest are provenance, not structure.
         """
-        known = {c.path for c in self.concepts}
+        known = {(c.origin, c.path) for c in self.concepts}
         out = []
         for c in self.concepts:
             for source in c.sources:
                 target = source.lstrip("./")
-                if target in known and target != c.path:
+                if (c.origin, target) in known and target != c.path:
                     out.append((c.path, target))
         return out
 
 
-def load(root: Path | None) -> Bundle:
+def merge(*bundles: Bundle) -> Bundle:
+    """One view over several bundles.
+
+    A workspace can have a generated wiki and the harness's own research at the
+    same time. They are separate directories with separate owners, but a lookup
+    should search both -- knowing a thing is worth the same whoever wrote it.
+    """
+    live = [b for b in bundles if b is not None]
+    merged = Bundle(root=live[0].root if live else Path())
+    for bundle in live:
+        merged.concepts.extend(bundle.concepts)
+        merged.unreadable.extend(bundle.unreadable)
+    return merged
+
+
+def load(root: Path | None, origin: str = "") -> Bundle:
     """Read every concept in a bundle. Never raises on a bad page."""
     if root is None or not root.is_dir():
         return Bundle(root=root or Path())
@@ -150,18 +168,19 @@ def load(root: Path | None) -> Bundle:
         except (OSError, UnicodeDecodeError):
             bundle.unreadable.append(str(path.relative_to(root)))
             continue
-        bundle.concepts.append(_concept(path.relative_to(root).as_posix(), text))
+        bundle.concepts.append(_concept(path.relative_to(root).as_posix(), text, origin))
     return bundle
 
 
-def _concept(rel_path: str, text: str) -> Concept:
+def _concept(rel_path: str, text: str, origin: str = "") -> Concept:
     meta = _frontmatter(text)
     if not isinstance(meta, dict):
-        return Concept(path=rel_path)
+        return Concept(path=rel_path, origin=origin)
 
     status = str(meta.get("status") or "stable").strip().lower()
     return Concept(
         path=rel_path,
+        origin=origin,
         type=_text(meta.get("type")),
         title=_text(meta.get("title")),
         description=_text(meta.get("description")),

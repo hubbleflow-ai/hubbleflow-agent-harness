@@ -20,6 +20,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `status: deprecated` and an elapsed `stale_after` are reported with every hit
   rather than filtered, because a bundle that has silently gone stale is worse
   than no bundle. Point it elsewhere with `HUBBLEFLOW_KNOWLEDGE`.
+- **A researched topic is a directory, not a file.** `overview.md` holds what is
+  true now, `log.md` records what changed and when, and `sources/` keeps one page
+  per source actually read. `index.md` and `log.md` are the filenames OKF
+  reserves, so the layout is the spec's. `--again` on an open topic carries it
+  forward — the round sees the current overview and researches from there —
+  rather than replacing it, which is what a subject that keeps happening needs.
+  Sources are recorded by the harness from the `web_fetch` calls the round made,
+  not from a list the model supplies.
+- **`/deep-research <question>`** researches in rounds and files the answer into
+  the knowledge bundle as an OKF concept — URLs actually read in `sources`, and a
+  `stale_after` the model judges per finding. Findings stop being messages that
+  scroll away: the next session finds them through `knowledge_lookup`. Asking the
+  same question again reuses the note unless it has expired, or `--again`.
+  This makes the harness an OKF *producer* as well as a consumer; notes go to
+  `.hubbleflow/knowledge/` rather than into a generated bundle's directory.
+  If the model researches and then forgets the tool call — common on a smaller
+  model, since it sits at the end of a long chain — the harness files the answer
+  itself, `draft` and with the cited URLs kept, rather than losing the work.
 - **`/knowledge`** browses the bundle by type, filters it, and writes a
   standalone HTML node view with `--graph`.
 - **`/skills`** lists loaded skills, prints one, and scaffolds a new project
@@ -40,6 +58,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and this changelog.
 
 ### Changed
+
+- Local sessions ask for a **64k** context window rather than 32k. Compaction has
+  to fit inside the window, and at 32k the conversation got ~18k before it fired
+  — three `web_fetch` calls — so research compacted away the sources it was about
+  to reason over. At 64k that budget is 51k. Measured on `gemma4:12b` the extra
+  costs about 750 MB of KV cache, because only 8 of its 48 layers attend globally;
+  a model without that layout pays more, and `HUBBLEFLOW_NUM_CTX` turns it down.
 
 - NVIDIA sessions compact at 96k rather than 256k. Its `/models` endpoint returns
   no context length, so nothing can be derived from it — and most NIM endpoints

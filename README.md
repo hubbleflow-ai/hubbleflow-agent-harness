@@ -15,15 +15,14 @@ hubbleflow
 
 ## Demo
 
-<!-- The clips live in videos/, which is gitignored -- git cannot delta-compress
-     video and 26 MB per file would weigh on every clone. Attach them to a
-     release, or drag them into an issue for a CDN link, then replace the URLs
-     below. GitHub renders an .mp4 link inline once it is on its own CDN. -->
+![Hubbleflow listing local models — Mesh and Ollama — with Gemma4:12b selected](docs/harness.png)
 
-| | |
-|---|---|
-| [Walkthrough](https://github.com/hubbleflow-ai/hubbleflow-agent-harness/releases) | the harness end to end |
-| [Local model](https://github.com/hubbleflow-ai/hubbleflow-agent-harness/releases) | running against Ollama, no key |
+`/local` above is the whole pitch: models served from your own hardware,
+discovered live, switched by name. The video walkthroughs live in `videos/`,
+which is gitignored — git cannot delta-compress video and 26 MB per file would
+weigh on every clone. Attach them to a
+[release](https://github.com/hubbleflow-ai/hubbleflow-agent-harness/releases)
+and link them here.
 
 ## What it is
 
@@ -119,8 +118,8 @@ In the composer: `/` for commands, `@` to complete a file path, `Esc+Enter` or a
 trailing `\` for a newline, `Ctrl+C` to interrupt a run, `Ctrl+D` to leave.
 
 `/help` `/model` `/models` `/local` `/mesh` `/cloud` `/skills` `/knowledge`
-`/tools` `/mcp` `/permissions` `/allowed` `/cache` `/usage` `/cwd` `/clear`
-`/exit`
+`/deep-research` `/tools` `/mcp` `/permissions` `/allowed` `/cache` `/usage`
+`/cwd` `/clear` `/exit`
 
 Leave with `/exit` (or `Ctrl+D`). Either releases any active cache on the way
 out — `Ctrl+C` never exits; it cancels the running turn.
@@ -221,9 +220,27 @@ file, wherever it sits, is invisible to it. Point a `Modelfile` at the GGUF and
 **Context window.** Ollama sizes the window from free VRAM when nobody asks, and
 settles on 4096 for a large model. The system prompt and tool declarations spend
 more than that before you have typed anything, so the first turn dies with
-`exceed_context_size_error`. The harness asks for 32k instead, per request, which
-also keeps the sizing here rather than in whatever the server was last started
-with. Override with `HUBBLEFLOW_NUM_CTX`.
+`exceed_context_size_error`. The harness asks for **64k** instead, per request,
+which also keeps the sizing here rather than in whatever the server was last
+started with. Override with `HUBBLEFLOW_NUM_CTX`.
+
+64k rather than 32k because compaction has to happen *inside* the window. At 32k
+the conversation gets about 18k before it compacts — three `web_fetch` calls,
+each capped at 20k characters — so research summarises away the sources it was
+about to reason over. At 64k that budget is 51k, or roughly ten pages.
+
+What it costs depends on the attention layout, and less than you would guess for
+a model that mixes global and sliding-window layers. Measured on `gemma4:12b`,
+where only 8 of 48 layers attend globally:
+
+```
+llama_kv_cache: 1024 MiB (65536 cells,  8 layers)   global
+llama_kv_cache:  480 MiB ( 1536 cells, 40 layers)   sliding window
+```
+
+1.5 GB, against 7.6 GB of weights — so 64k costs about 750 MB more than 32k.
+A model whose every layer attends globally pays several times that, which is
+when to turn the window back down.
 
 Prompt caching needs no setup: llama.cpp reuses the KV prefix between turns, and
 a warm prefix reprocesses about 50x faster than a cold one. It holds only while
@@ -251,7 +268,7 @@ to be summarised. Where that happens depends on the window:
 |---|---|
 | Gemini | 256k tokens |
 | NVIDIA | 96k — its `/models` advertises no context length, and most NIM endpoints are 128k, a few 32k. The default has to assume the common case |
-| Ollama, Mesh, vLLM, llama.cpp, FreeToken | derived from the window, ~18.5k at the 32k default |
+| Ollama, Mesh, vLLM, llama.cpp, FreeToken | derived from the window — 51k at the 64k default |
 
 `HUBBLEFLOW_COMPACT_AFTER` overrides the hosted numbers. `/usage` shows how much
 of the window the conversation currently holds and whether it has compacted —
@@ -305,6 +322,68 @@ to find out. `HUBBLEFLOW_KNOWLEDGE` points somewhere else, or at nothing.
 /knowledge <words>      just the matching ones
 /knowledge --graph      a standalone HTML node view
 ```
+
+## Deep research
+
+```
+/deep-research nepal floods 2026
+```
+
+Research runs in rounds — plan the sub-questions, search each as a question,
+read the primary source before relying on it, corroborate anything surprising,
+then ask what is still unanswered and go again if the gap matters.
+
+**A topic is a directory, not a file**, because most subjects worth researching
+do not stop happening:
+
+```
+nepal-floods-2026/
+  overview.md    what is true now        rewritten each round
+  log.md         what changed, and when  appended, never rewritten
+  sources/       one page per source     written once, kept
+  index.md       a listing               regenerated
+```
+
+Each answers a different question. *"What do I know about the floods?"* reads
+`overview.md`, which stays short because it is only ever the current state.
+*"What changed this week?"* reads `log.md`. *"Where did 612 come from?"* opens
+the page in `sources/` that it was read from.
+
+`index.md` and `log.md` are the two filenames OKF reserves, so the layout is the
+spec's rather than one invented here.
+
+### Carrying a topic forward
+
+Ask about an open topic and it does not start again:
+
+```
+/deep-research --again nepal floods 2026
+```
+
+The round is given the current overview and the date it was last touched, and
+researches forward from there. It appends a line to the log, records any new
+sources, and rewrites the overview to what is now true. So the topic
+accumulates instead of resetting, and `stale_after` stops meaning "wrong" and
+starts meaning "due for another round" — an expired topic is carried forward
+without being asked.
+
+### What the harness does rather than the model
+
+**Sources are recorded from the pages actually opened**, read back out of the
+`web_fetch` calls the round made. Not from a list the model provides: a link
+seen in a search result and never read is not a source, and asking a model to
+remember which were which is how the citations came out wrong the first time.
+
+And if the model finishes the research and never calls `save_research` — which
+a smaller one often does, since the call sits at the end of a long chain — the
+harness files the answer itself, marked `draft` because the model's own
+judgment about tags and expiry is the part that is missing. The research is
+never the thing that gets lost.
+
+Notes are written to `.hubbleflow/knowledge/`, deliberately **not** inside a
+generated bundle: `openwiki --update` is entitled to rewrite its own directory,
+and two producers sharing a folder ends one way. Both are read as one view.
+`HUBBLEFLOW_RESEARCH` moves it, or turns it off when empty.
 
 **Staleness travels with every result.** A bundle that has quietly gone out of
 date is worse than no bundle, so `status: deprecated` and an elapsed
@@ -429,7 +508,7 @@ Ollama, Mesh and FreeToken need no key at all.
 | `HUBBLEFLOW_MODEL` | `google_genai:gemini-3.5-flash-lite` |
 | `HUBBLEFLOW_TIMEOUT` | `300` seconds |
 | `HUBBLEFLOW_MAX_TOKENS` | `8192` output tokens |
-| `HUBBLEFLOW_NUM_CTX` | `32768` — the context window asked of a local model |
+| `HUBBLEFLOW_NUM_CTX` | `65536` — the context window asked of a local model |
 | `HUBBLEFLOW_COMPACT_AFTER` | `256000` — where a *hosted* session compacts; local is derived from the window |
 | `HUBBLEFLOW_SEARCH_MODEL` | `gemini-3.5-flash-lite` — the model behind `web_search` |
 
@@ -440,6 +519,7 @@ Ollama, Mesh and FreeToken need no key at all.
 | `HUBBLEFLOW_HOME` | `~/.hubbleflow` — keys, sessions, history, skills |
 | `HUBBLEFLOW_CONTEXT_FILES` | `HUBBLEFLOW.md,AGENTS.md,CLAUDE.md`; empty disables the lookup |
 | `HUBBLEFLOW_KNOWLEDGE` | `./openwiki` if it exists; empty disables it |
+| `HUBBLEFLOW_RESEARCH` | `./.hubbleflow/knowledge` — where `/deep-research` files findings; empty disables it |
 
 **Providers**
 
@@ -481,7 +561,7 @@ src/hubbleflow/
   backend.py       filesystem that accepts workspace and real paths alike
   tools/shell.py   the bash tool
   tools/web.py     web_search and web_fetch
-  tools/knowledge.py  knowledge_lookup over the OKF bundle
+  tools/knowledge.py  knowledge_lookup, and save_research that writes OKF
   ui/              banner, composer, approval dialog, transcript renderer
   ui/graph.py      the knowledge bundle as a standalone HTML page
 skills/            the web-research skill, copied to ~/.hubbleflow/skills

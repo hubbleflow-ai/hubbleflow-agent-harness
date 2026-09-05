@@ -36,7 +36,14 @@ DEFAULT_MAX_TOKENS = 8192
 # Ollama sizes the context window from free VRAM when nobody asks, and settles
 # on 4096 for a large model. The system prompt and tool schemas spend more than
 # that before the first user turn, so ask rather than accept the guess.
-DEFAULT_NUM_CTX = 32768
+#
+# 64k rather than 32k because compaction has to fit inside the window, and at
+# 32k the budget left for the conversation is about 18k -- three `web_fetch`
+# calls, each capped at 20k characters, and research compacts away the sources
+# it was about to reason over. The extra costs under a gigabyte of KV cache on a
+# hybrid-attention model; a model whose every layer attends globally will pay
+# considerably more, which is what HUBBLEFLOW_NUM_CTX is for.
+DEFAULT_NUM_CTX = 65536
 
 # A project's own instructions, read from the workspace root. First match wins
 # rather than all of them concatenated: a repo with both AGENTS.md and CLAUDE.md
@@ -54,6 +61,10 @@ DEFAULT_COMPACT_AFTER_NVIDIA = 96_000
 # Where OpenWiki writes its bundle. Any OKF producer can be pointed at instead
 # with HUBBLEFLOW_KNOWLEDGE; the format is a spec, not one tool's output.
 DEFAULT_KNOWLEDGE_DIR = "openwiki"
+# Research the harness writes itself. Deliberately not inside the bundle above:
+# that one belongs to whatever generated it, and `openwiki --update` is entitled
+# to rewrite its own directory. Both are OKF and both are read.
+DEFAULT_RESEARCH_DIR = ".hubbleflow/knowledge"
 
 CONTEXT_FILES = ("HUBBLEFLOW.md", "AGENTS.md", "CLAUDE.md")
 # The file rides along on every request. On a 32k local window a long one would
@@ -94,6 +105,7 @@ class Config:
     global_skills: Path | None
     project_skills: Path | None
     knowledge: Path | None = None
+    research: Path | None = None
 
     @property
     def model_name(self) -> str:
@@ -144,6 +156,7 @@ class Config:
             global_skills=_maybe_dir(_seed_skills()),
             project_skills=_maybe_dir(ws / ".hubbleflow" / "skills"),
             knowledge=_knowledge_root(ws),
+            research=_research_root(ws),
         )
 
 
@@ -191,6 +204,20 @@ def context_window() -> int:
         return int(os.environ["HUBBLEFLOW_NUM_CTX"])
     except (KeyError, ValueError):
         return DEFAULT_NUM_CTX
+
+
+def _research_root(workspace: Path) -> Path | None:
+    """Where `/deep-research` files what it finds.
+
+    Unlike the read-only bundle this is returned whether or not it exists yet --
+    the first piece of research creates it. An empty override turns the whole
+    feature off for a workspace you would rather not leave notes in.
+    """
+    override = os.getenv("HUBBLEFLOW_RESEARCH")
+    if override is not None:
+        override = override.strip()
+        return Path(override).expanduser() if override else None
+    return workspace / DEFAULT_RESEARCH_DIR
 
 
 def _knowledge_root(workspace: Path) -> Path | None:

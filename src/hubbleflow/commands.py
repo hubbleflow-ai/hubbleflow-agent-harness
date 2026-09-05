@@ -15,6 +15,8 @@ from pathlib import Path
 
 from hubbleflow import mcp as mcp_module
 from hubbleflow import knowledge as knowledge_module
+from hubbleflow import research as research_module
+from hubbleflow.tools import knowledge as tools_knowledge
 from hubbleflow import models as model_registry
 
 if TYPE_CHECKING:
@@ -552,10 +554,269 @@ def _skill_new(app: "Hubbleflow", name: str) -> str:
     return CONTINUE
 
 
+_OPENING = """\
+Research this properly and then file what you find:
+
+    {question}
+
+Work in rounds rather than one pass. Plan the sub-questions the answer depends \
+on, search each as a real question, and read the primary source before relying \
+on any of it -- a search summary can blend two versions together and sound \
+certain about it. When a result contradicts what you expected, that is the one \
+to corroborate, not the one to accept. When the question touches something in \
+this repository, check the code and the lockfile: those are facts about this \
+project, and they beat a claim about the world.
+
+After each round, ask what is still unanswered. Go again if the gap matters. \
+Stop when another round would not change the conclusion.
+"""
+
+_UPDATING = """\
+This topic is already open. Here is what it currently says:
+
+{overview}
+
+Last updated {last}. Find out what has changed since then, and what was \
+unresolved and now is not. Do not start again from nothing -- read what is \
+above, then research forward from it.
+
+Read the primary source before relying on it, and corroborate anything that \
+contradicts what is already recorded rather than assuming the newer claim wins.
+"""
+
+_CLOSING = """\
+
+Then call save_research once, using the topic name `{topic}`.
+
+Write the overview as the whole picture as it now stands, not only the new \
+part -- it replaces what was there. What changed goes in `changed`, one line, \
+for the log. Write it so a reader need not open the sources to follow it, and \
+say where the evidence is thin or the sources disagreed. If the answer is \
+genuinely short, say so and say why, rather than padding it into bullets.
+
+The pages you opened are recorded for you, so refer to them by what they are \
+(the outlet and the date) instead of pasting links. Judge stale_after_days \
+honestly: a running story is days, something settled is 0.
+
+Do not claim you have saved anything. The tool call is what saves it, and you \
+will be told whether it worked.\
+"""
+
+
+async def _deep_research(app: "Hubbleflow", args: str) -> str:
+    """Open a topic, or carry an open one forward."""
+    force = False
+    question = args.strip()
+    for flag in ("--again", "--force"):
+        if question.startswith(flag):
+            force, question = True, question[len(flag):].strip()
+
+    root = app.config.research
+    if root is None:
+        app.transcript.notice(
+            "Research is turned off — HUBBLEFLOW_RESEARCH is empty.", style="hf.warn")
+        return CONTINUE
+    if not question:
+        return await _knowledge(app, "") if root.is_dir() else _no_research(app)
+
+    directory = research_module.existing_topic(root, question)
+    if directory is not None and not force and not _due(directory):
+        app.transcript.print()
+        app.transcript.notice(
+            f"Already open: {directory.name} — /deep-research --again to carry it forward.",
+            style="hf.ok")
+        app.transcript.print(Text(f"    /research/{directory.name}/overview.md", style="hf.accent"), indent=2)
+        app.transcript.print()
+        return CONTINUE
+
+    topic = directory.name if directory is not None else research_module.slug(question)
+    brief = _OPENING.format(question=question)
+    if directory is not None:
+        brief = _UPDATING.format(
+            overview=research_module.read_overview(directory)[:4000],
+            last=research_module.last_logged(directory) or "an earlier round",
+        )
+    brief += _CLOSING.format(topic=topic)
+
+    app.transcript.user_echo(f"/deep-research {question}")
+    logged_before = research_module.last_logged(research_module.topic_dir(root, topic))
+    await app.turn(brief)
+    await _close_round(app, topic, question, logged_before)
+    return CONTINUE
+
+
+def _due(directory) -> bool:
+    """A topic past its own expiry is carried forward rather than reused."""
+    from hubbleflow.knowledge import load
+
+    for concept in load(directory.parent, "research").concepts:
+        if concept.path.startswith(f"{directory.name}/") and concept.type == research_module.TOPIC_TYPE:
+            return concept.stale()
+    return False
+
+
+async def _close_round(app: "Hubbleflow", topic: str, question: str, logged_before: str) -> None:
+    """Record what was read, file the answer if the model didn't, then link them.
+
+    Sources are written from what `web_fetch` returned rather than from a list
+    the model provides: a page it opened is a fact, and asking it to remember
+    which ones is how the citations came out wrong before.
+    """
+    root = app.config.research
+    directory = research_module.topic_dir(root, topic)
+
+    pages = await _fetched_pages(app)
+    already = research_module.known_sources(directory)
+    recorded = [
+        path for url, title, body in pages
+        if url not in already
+        and (path := research_module.record_source(directory, url=url, title=title, body=body))
+    ]
+
+    if not (directory / research_module.OVERVIEW).exists():
+        answer = await _last_answer(app)
+        if not answer or len(answer) < 200:
+            app.transcript.notice(await _why_nothing(app, answer), style="hf.warn")
+            return
+        written, message = research_module.revise_overview(
+            directory, title=question, overview=answer, status="draft",
+            description="Filed automatically; the model did not classify it.")
+        if not written:
+            app.transcript.notice(message, style="hf.err")
+            return
+        research_module.append_log(directory, "Opened; filed by the harness.")
+        app.transcript.notice(
+            f"{message} (filed for you — the model didn't call save_research)", style="hf.ok")
+
+    if recorded:
+        research_module.link_sources(directory, recorded)
+        research_module.write_index(directory)
+    app.transcript.notice(
+        f"/research/{directory.name}/ — {len(recorded)} source(s) recorded this round",
+        style="hf.faint")
+
+
+async def _fetched_pages(app: "Hubbleflow") -> list[tuple[str, str, str]]:
+    """(url, title, body) for every page this turn actually opened.
+
+    Paired from the call to its result, so the body kept is the page that came
+    back rather than anything the model said about it.
+    """
+    try:
+        state = await app.harness.graph.aget_state(
+            {"configurable": {"thread_id": app.config.thread_id}})
+        messages = (state.values or {}).get("messages") or []
+    except Exception:
+        return []
+
+    wanted: dict[str, str] = {}
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or []:
+            if call.get("name") == "web_fetch" and (url := (call.get("args") or {}).get("url")):
+                wanted[str(call.get("id"))] = str(url)
+
+    pages = []
+    for message in messages:
+        call_id = getattr(message, "tool_call_id", None)
+        if call_id not in wanted:
+            continue
+        content = getattr(message, "content", "")
+        body = content if isinstance(content, str) else json.dumps(content)
+        pages.append((wanted[call_id], _title_of(body) or wanted[call_id], body))
+    return pages
+
+
+async def _why_nothing(app: "Hubbleflow", answer: str) -> str:
+    """Say what the model actually did, not just that nothing was kept.
+
+    The transcript can be full of text and still have nothing to file, because
+    what fills it is tool output being rendered. Reporting that as "no
+    conclusion worth keeping" reads as a judgment on research that was never
+    written, and leaves nothing to act on.
+    """
+    used: dict[str, int] = {}
+    try:
+        state = await app.harness.graph.aget_state(
+            {"configurable": {"thread_id": app.config.thread_id}})
+        for message in (state.values or {}).get("messages") or []:
+            for call in getattr(message, "tool_calls", None) or []:
+                name = call.get("name", "?")
+                used[name] = used.get(name, 0) + 1
+    except Exception:
+        pass
+
+    did = ", ".join(f"{n}×{c}" for n, c in sorted(used.items())) or "nothing"
+    if answer:
+        return (
+            f"Nothing filed — the model stopped after {len(answer)} characters, too "
+            f"little to keep. It called {did}. Try /deep-research --again, or a larger model."
+        )
+    return (
+        f"Nothing filed — the model never wrote an answer. It called {did} and then "
+        f"stopped. The text on screen was tool output, not its conclusion. "
+        f"Try /deep-research --again, or /model something larger."
+    )
+
+
+async def _last_answer(app: "Hubbleflow") -> str:
+    """The final assistant message of the turn that just ran."""
+    try:
+        state = await app.harness.graph.aget_state(
+            {"configurable": {"thread_id": app.config.thread_id}})
+        messages = (state.values or {}).get("messages") or []
+    except Exception:
+        return ""
+    for message in reversed(messages):
+        if type(message).__name__ == "AIMessage":
+            content = message.content
+            text = content if isinstance(content, str) else json.dumps(content)
+            if text.strip():
+                return text
+    return ""
+
+
+def _title_of(page: str) -> str:
+    """The page's own first heading, which names the file better than a URL."""
+    import re
+
+    match = re.search(r"^#\s+(.+)$", page[:2000], re.MULTILINE)
+    return " ".join(match.group(1).split())[:80] if match else ""
+
+
+def _no_research(app: "Hubbleflow") -> str:
+    app.transcript.notice(
+        "Nothing researched yet. /deep-research <question> to start.", style="hf.faint")
+    return CONTINUE
+
+
+def _already_known(bundle, question: str, overlap: float = 0.6) -> list:
+    """Notes that answer this question and haven't expired.
+
+    Word overlap rather than substring: a question is phrased freely and will
+    not appear verbatim in a title. Stale notes are deliberately not returned --
+    the point of `stale_after` is that the answer gets looked at again.
+    """
+    import re
+
+    asked = {w for w in re.findall(r"[a-z0-9]+", question.lower()) if len(w) > 2}
+    if not asked:
+        return []
+
+    found = []
+    for concept in bundle.concepts:
+        if concept.stale() or concept.status == "deprecated":
+            continue
+        haystack = " ".join((concept.title, concept.description, *concept.tags)).lower()
+        words = set(re.findall(r"[a-z0-9]+", haystack))
+        if len(asked & words) / len(asked) >= overlap:
+            found.append(concept)
+    return found
+
+
 async def _knowledge(app: "Hubbleflow", args: str) -> str:
     """Show the OKF bundle: a tree by type, a search, or the graph."""
     root = app.config.knowledge
-    if root is None:
+    if root is None and not (app.config.research and app.config.research.is_dir()):
         app.transcript.notice(
             "No knowledge bundle. Generate one with OpenWiki, or point "
             "HUBBLEFLOW_KNOWLEDGE at an OKF directory.",
@@ -563,7 +824,10 @@ async def _knowledge(app: "Hubbleflow", args: str) -> str:
         )
         return CONTINUE
 
-    bundle = knowledge_module.load(root)
+    bundle = knowledge_module.merge(
+        knowledge_module.load(root, "knowledge"),
+        knowledge_module.load(app.config.research, "research"),
+    )
     if not bundle:
         app.transcript.notice(f"{root} has no readable concepts.", style="hf.warn")
         return CONTINUE
@@ -648,6 +912,7 @@ ORDERED: tuple[Command, ...] = (
     Command("/cloud", "list hosted models — Gemini and NVIDIA", _cloud),
     Command("/skills", "list skills, read one, or scaffold a new one", _skills),
     Command("/knowledge", "browse the OKF knowledge bundle, or graph it", _knowledge),
+    Command("/deep-research", "research a question in rounds and file the answer", _deep_research),
     Command("/tools", "show the tools the agent can reach", _tools),
     Command("/mcp", "show connected MCP servers and their tools", _mcp),
     Command("/permissions", "toggle whether writes and commands need approval", _permissions),

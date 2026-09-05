@@ -20,6 +20,7 @@ from hubbleflow.config import GEMINI, MESH, NVIDIA, OLLAMA, Config
 from hubbleflow.permissions import PermissionPolicy
 from hubbleflow.profile import register_gemini_profile
 from hubbleflow.tools.shell import ShellSession, make_shell_tool
+from hubbleflow.tools.clock import make_clock_tools, system_prompt_line
 from hubbleflow.tools.knowledge import make_knowledge_tools
 from hubbleflow.tools.web import make_web_tools
 
@@ -82,6 +83,9 @@ _PROJECT_SKILLS = "/.hubbleflow/skills/"
 # authors, different lifetimes, so a route of its own rather than a skills
 # subdirectory -- and the bundle usually lives outside the workspace anyway.
 _KNOWLEDGE_ROUTE = "/knowledge/"
+# The harness's own notes, kept apart from a generated bundle so neither tool
+# rewrites the other's directory.
+_RESEARCH_ROUTE = "/research/"
 
 # The system prompt and tool declarations ride on every request; measured at
 # about 5.3k, rounded up so a new tool doesn't silently eat the margin.
@@ -192,8 +196,8 @@ async def build(
 
     graph = create_deep_agent(
         model=model,
-        tools=[bash, *make_web_tools(), *make_knowledge_tools(config.knowledge, _KNOWLEDGE_ROUTE), *servers.tools],
-        system_prompt=SYSTEM_PROMPT + _project_context(config),
+        tools=[bash, *make_clock_tools(), *make_web_tools(), *make_knowledge_tools(config.knowledge, _KNOWLEDGE_ROUTE, config.research, _RESEARCH_ROUTE), *servers.tools],
+        system_prompt=SYSTEM_PROMPT + system_prompt_line() + _project_context(config),
         middleware=[
             TodoListMiddleware(),
             SummarizationMiddleware(
@@ -333,6 +337,10 @@ def _backend(config: Config) -> tuple[object, list[str]]:
     if config.knowledge:
         routes[_KNOWLEDGE_ROUTE] = ForgivingFilesystemBackend(
             root_dir=config.knowledge, virtual_mode=config.virtual_mode
+        )
+    if config.research and config.research.is_dir():
+        routes[_RESEARCH_ROUTE] = ForgivingFilesystemBackend(
+            root_dir=config.research, virtual_mode=config.virtual_mode
         )
     if not routes:
         return workspace, sources
