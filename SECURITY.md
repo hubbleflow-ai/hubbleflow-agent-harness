@@ -35,7 +35,7 @@ If you're looking for somewhere to start, these carry the most risk:
 
 | Area | Why |
 |---|---|
-| `permissions.py` | Decides what runs without asking. A command that reads as read-only but isn't is a real bug — chained commands are allowlisted verbatim precisely to avoid granting a bare prefix. |
+| `permissions.py` | Decides what runs without asking. A command that reads as read-only but isn't is a real bug, chained commands are allowlisted verbatim precisely to avoid granting a bare prefix. |
 | `backend.py` | Enforces the workspace sandbox while accepting both virtual and host spellings of a path. Traversal out of the workspace is the thing to break. |
 | `tools/shell.py` | Runs the commands. Argument construction differs on Windows (PowerShell) and POSIX. |
 | `mcp.py` | MCP servers are third-party code with their own capabilities. Every MCP tool prompts on first use for that reason. |
@@ -51,7 +51,7 @@ Both are documented in the README's Configuration section.
 
 - The agent running a destructive command you approved.
 - `--yolo` skipping approvals. That is what it is for.
-- Prompt injection causing the model to *propose* something dangerous — the
+- Prompt injection causing the model to *propose* something dangerous, the
   approval layer is the control, and a report is only interesting if it shows
   that layer being bypassed.
 - A mesh node seeing your prompts. `README.md` states this; mesh inference runs

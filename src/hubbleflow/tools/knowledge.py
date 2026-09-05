@@ -113,7 +113,7 @@ def file_research(
     """
     slug = _slug(title)
     if not slug:
-        return False, "That title has no usable filename in it — give it words."
+        return False, "That title has no usable filename in it, give it words."
 
     now = datetime.now(timezone.utc)
     meta: dict = {

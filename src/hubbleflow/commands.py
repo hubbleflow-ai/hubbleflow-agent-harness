@@ -136,7 +136,7 @@ async def _show_models(app: "Hubbleflow", providers: list[str], needle: str = ""
         label, why = _PROVIDER_LABELS[provider]
         if not names:
             reason = f"nothing matching {needle!r}" if needle else "nothing reachable"
-            app.transcript.print(Text(f"  {label}  —  {reason}", style="hf.faint"))
+            app.transcript.print(Text(f"  {label} ,  {reason}", style="hf.faint"))
             app.transcript.print()
             continue
         header = Text(f"  {label}", style="hf.accent")
@@ -153,10 +153,10 @@ async def _show_models(app: "Hubbleflow", providers: list[str], needle: str = ""
                 line.append(detail, style="hf.faint")
             app.transcript.print(line)
         if len(names) > len(shown):
-            app.transcript.print(Text(f"    … {len(names) - len(shown)} more — narrow it with a word, e.g. /cloud muse", style="hf.faint"))
+            app.transcript.print(Text(f"    … {len(names) - len(shown)} more, narrow it with a word, e.g. /cloud muse", style="hf.faint"))
         app.transcript.print()
 
-    app.transcript.print(Text("  /model <name> to switch — a bare name finds the right provider", style="hf.faint"))
+    app.transcript.print(Text("  /model <name> to switch, a bare name finds the right provider", style="hf.faint"))
     app.transcript.print()
     return CONTINUE
 
@@ -178,7 +178,7 @@ def _context_note(context: int) -> str:
     if not context:
         return ""
     if context < model_registry.MIN_USABLE_CONTEXT:
-        return f"{context:,} ctx — too small for this harness"
+        return f"{context:,} ctx, too small for this harness"
     return f"{context:,} ctx"
 
 
@@ -203,7 +203,7 @@ def _mesh_advice() -> str:
             "  or set HUBBLEFLOW_MESH_ALLOW_HOST=1 to use it as it is."
         )
     if model_registry.mesh_installed():
-        return f"No mesh node answering at {where} — start one with `mesh-llm client --auto`."
+        return f"No mesh node answering at {where}, start one with `mesh-llm client --auto`."
     return (
         f"No mesh node at {where}, and mesh-llm isn't installed. Install it with\n"
         "    curl -fsSL https://raw.githubusercontent.com/Mesh-LLM/mesh-llm/main/install.sh | bash\n"
@@ -215,12 +215,12 @@ def _nothing_reachable(providers: list[str]) -> str:
     if providers == [model_registry.MESH]:
         return _mesh_advice()
     if providers == _SELF_HOSTED:
-        return f"Nothing self-hosted — is Ollama running at {model_registry.ollama_host()}? For a mesh: {_mesh_advice()}"
+        return f"Nothing self-hosted, is Ollama running at {model_registry.ollama_host()}? For a mesh: {_mesh_advice()}"
     if providers == [model_registry.OLLAMA]:
-        return f"No local models — is Ollama running at {model_registry.ollama_host()}?"
+        return f"No local models, is Ollama running at {model_registry.ollama_host()}?"
     if providers == _CLOUD:
-        return "No hosted models reachable — check GOOGLE_API_KEY and NVIDIA_API_KEY."
-    return "Nothing matched — check your keys, or start Ollama."
+        return "No hosted models reachable, check GOOGLE_API_KEY and NVIDIA_API_KEY."
+    return "Nothing matched, check your keys, or start Ollama."
 
 
 async def _cache(app: "Hubbleflow", args: str) -> str:
@@ -241,9 +241,9 @@ async def _cache(app: "Hubbleflow", args: str) -> str:
     stats = app.harness.cache_stats
     if app.config.cache:
         detail = f"{stats.builds} builds, {stats.reused} reuses" if stats.active else "nothing cached yet"
-        app.transcript.notice(f"caching on — {detail}", style="hf.ok")
+        app.transcript.notice(f"caching on, {detail}", style="hf.ok")
     else:
-        app.transcript.notice("caching off — nothing is being stored")
+        app.transcript.notice("caching off, nothing is being stored")
     return CONTINUE
 
 
@@ -312,9 +312,9 @@ async def _usage(app: "Hubbleflow", args: str) -> str:
             f"  cache: {stats.builds} builds, {stats.reused} reuses, {stats.tokens_cached:,} tokens held",
             style="hf.faint"))
     elif app.config.cache and stats.failures:
-        app.transcript.print(Text(f"  cache unavailable — {stats.last_error}", style="hf.warn"))
+        app.transcript.print(Text(f"  cache unavailable, {stats.last_error}", style="hf.warn"))
     elif not app.config.cache:
-        app.transcript.print(Text("  caching off — start with --cache to turn it on", style="hf.faint"))
+        app.transcript.print(Text("  caching off, start with --cache to turn it on", style="hf.faint"))
 
     if (cost := _cost(app.config.model_name, usage)) is not None:
         detail = Text(f"  ≈ ${cost:.4f} at published rates", style="hf.faint")
@@ -419,7 +419,7 @@ async def _permissions(app: "Hubbleflow", args: str) -> str:
         policy.auto_approve = True
     else:
         policy.auto_approve = not policy.auto_approve
-    state = "off — nothing will ask before running" if policy.auto_approve else "on — writes and commands need approval"
+    state = "off, nothing will ask before running" if policy.auto_approve else "on, writes and commands need approval"
     app.transcript.notice(f"approvals {state}", style="hf.warn" if policy.auto_approve else "hf.muted")
     return CONTINUE
 
@@ -550,7 +550,7 @@ def _skill_new(app: "Hubbleflow", name: str) -> str:
         app.transcript.notice(f"Couldn't write {path}: {error}", style="hf.err")
         return CONTINUE
 
-    app.transcript.notice(f"Created {path} — edit it, then /clear to reload.", style="hf.ok")
+    app.transcript.notice(f"Created {path}, edit it, then /clear to reload.", style="hf.ok")
     return CONTINUE
 
 
@@ -614,7 +614,7 @@ async def _deep_research(app: "Hubbleflow", args: str) -> str:
     root = app.config.research
     if root is None:
         app.transcript.notice(
-            "Research is turned off — HUBBLEFLOW_RESEARCH is empty.", style="hf.warn")
+            "Research is turned off, HUBBLEFLOW_RESEARCH is empty.", style="hf.warn")
         return CONTINUE
     if not question:
         return await _knowledge(app, "") if root.is_dir() else _no_research(app)
@@ -623,7 +623,7 @@ async def _deep_research(app: "Hubbleflow", args: str) -> str:
     if directory is not None and not force and not _due(directory):
         app.transcript.print()
         app.transcript.notice(
-            f"Already open: {directory.name} — /deep-research --again to carry it forward.",
+            f"Already open: {directory.name}, /deep-research --again to carry it forward.",
             style="hf.ok")
         app.transcript.print(Text(f"    /research/{directory.name}/overview.md", style="hf.accent"), indent=2)
         app.transcript.print()
@@ -686,13 +686,13 @@ async def _close_round(app: "Hubbleflow", topic: str, question: str, logged_befo
             return
         research_module.append_log(directory, "Opened; filed by the harness.")
         app.transcript.notice(
-            f"{message} (filed for you — the model didn't call save_research)", style="hf.ok")
+            f"{message} (filed for you, the model didn't call save_research)", style="hf.ok")
 
     if recorded:
         research_module.link_sources(directory, recorded)
         research_module.write_index(directory)
     app.transcript.notice(
-        f"/research/{directory.name}/ — {len(recorded)} source(s) recorded this round",
+        f"/research/{directory.name}/, {len(recorded)} source(s) recorded this round",
         style="hf.faint")
 
 
@@ -748,11 +748,11 @@ async def _why_nothing(app: "Hubbleflow", answer: str) -> str:
     did = ", ".join(f"{n}×{c}" for n, c in sorted(used.items())) or "nothing"
     if answer:
         return (
-            f"Nothing filed — the model stopped after {len(answer)} characters, too "
+            f"Nothing filed, the model stopped after {len(answer)} characters, too "
             f"little to keep. It called {did}. Try /deep-research --again, or a larger model."
         )
     return (
-        f"Nothing filed — the model never wrote an answer. It called {did} and then "
+        f"Nothing filed, the model never wrote an answer. It called {did} and then "
         f"stopped. The text on screen was tool output, not its conclusion. "
         f"Try /deep-research --again, or /model something larger."
     )
@@ -907,9 +907,9 @@ ORDERED: tuple[Command, ...] = (
     Command("/help", "list every slash command", _help),
     Command("/model", "show or switch the model, local or cloud", _model),
     Command("/models", "list every model, local and cloud", _models),
-    Command("/local", "list self-hosted models — Ollama and Mesh", _local),
+    Command("/local", "list self-hosted models, Ollama and Mesh", _local),
     Command("/mesh", "list models served by the mesh-llm node", _mesh),
-    Command("/cloud", "list hosted models — Gemini and NVIDIA", _cloud),
+    Command("/cloud", "list hosted models, Gemini and NVIDIA", _cloud),
     Command("/skills", "list skills, read one, or scaffold a new one", _skills),
     Command("/knowledge", "browse the OKF knowledge bundle, or graph it", _knowledge),
     Command("/deep-research", "research a question in rounds and file the answer", _deep_research),

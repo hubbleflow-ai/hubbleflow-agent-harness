@@ -58,7 +58,7 @@ def test_a_path_outside_the_workspace_is_still_refused(backend):
 
 
 def test_traversal_is_still_refused(backend):
-    """Traversal raises rather than returning an error result — it never resolves."""
+    """Traversal raises rather than returning an error result, it never resolves."""
     with pytest.raises(ValueError, match="traversal"):
         backend.read("/../../etc/passwd")
 

@@ -18,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="A DeepAgents coding harness running on Gemini.",
     )
     parser.add_argument("prompt", nargs="*", help="run this prompt immediately instead of waiting for one")
-    parser.add_argument("-m", "--model", metavar="ID", help="model to use — a Gemini id or a local Ollama tag (see /models)")
+    parser.add_argument("-m", "--model", metavar="ID", help="model to use, a Gemini id or a local Ollama tag (see /models)")
     parser.add_argument("-C", "--cwd", metavar="DIR", type=Path, help="workspace to operate in (default: the current directory)")
     parser.add_argument("-c", "--continue", dest="continue_session", action="store_true", help="resume this workspace's last session")
     parser.add_argument("-p", "--print", action="store_true", help="run the prompt, print the answer, and exit")
@@ -28,12 +28,12 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         const="1",
         metavar="0|1",
-        help="cache the conversation prefix on Gemini's servers — cheaper input, small hourly storage cost (default: off)",
+        help="cache the conversation prefix on Gemini's servers, cheaper input, small hourly storage cost (default: off)",
     )
     parser.add_argument(
         "--purge-caches",
         action="store_true",
-        help="delete every context cache this tool has created, then exit — storage bills per hour, so this is the panic button",
+        help="delete every context cache this tool has created, then exit, storage bills per hour, so this is the panic button",
     )
     parser.add_argument("-V", "--version", action="version", version=f"hubbleflow {__version__}")
     return parser

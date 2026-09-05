@@ -154,9 +154,9 @@ class Hubbleflow:
 
         if interactive and servers.connected:
             count = sum(len(names) for names in servers.connected.values())
-            self.transcript.notice(f"MCP: {', '.join(servers.connected)} — {count} tools", style="hf.ok")
+            self.transcript.notice(f"MCP: {', '.join(servers.connected)}, {count} tools", style="hf.ok")
         for name, reason in servers.failed.items():
-            self.transcript.notice(f"MCP: {name} didn't start — {reason}", style="hf.warn")
+            self.transcript.notice(f"MCP: {name} didn't start, {reason}", style="hf.warn")
         if servers.connected or servers.failed:
             self.transcript.print()
         return servers
@@ -265,7 +265,7 @@ class Hubbleflow:
             return
         self._warned_leak = True
         self.transcript.notice(
-            f"{self.config.model_name} wrote a tool call as text instead of calling the tool — "
+            f"{self.config.model_name} wrote a tool call as text instead of calling the tool, "
             "the answer above is malformed. Try a model with reliable tool support (/models).",
             style="hf.warn",
         )
@@ -316,7 +316,7 @@ class Hubbleflow:
 
         reason = await self._ask_reason()
         if reason:
-            self.transcript.notice(f"✗ declined — {reason}", style="hf.warn")
+            self.transcript.notice(f"✗ declined, {reason}", style="hf.warn")
             return {"type": "respond", "message": reason}
         self.transcript.notice("✗ declined", style="hf.warn")
         return {"type": "reject", "message": REJECTION_DEFAULT}
@@ -513,13 +513,13 @@ def _explain(error: Exception, provider: str = "") -> str:
     if "recursion" in lowered:
         return (
             f"{text}\n  The agent looped without finishing. That usually means the model is "
-            "writing tool calls as text instead of calling tools — try /models for one with "
+            "writing tool calls as text instead of calling tools, try /models for one with "
             "reliable tool support."
         )
     if "api key" in lowered or "api_key" in lowered or "permission_denied" in lowered:
-        return f"{text}\n  Check GOOGLE_API_KEY — /models will list what your key can reach."
+        return f"{text}\n  Check GOOGLE_API_KEY, /models will list what your key can reach."
     if "not found" in lowered and "model" in lowered:
         return f"{text}\n  Run /models to see the model ids your key can reach, then /model <id>."
     if "quota" in lowered or "429" in text or "resource_exhausted" in lowered:
-        return f"{text}\n  Rate limited by the Gemini API — wait a moment, or /model a lighter model."
+        return f"{text}\n  Rate limited by the Gemini API, wait a moment, or /model a lighter model."
     return text

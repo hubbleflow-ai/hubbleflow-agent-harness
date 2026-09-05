@@ -63,7 +63,7 @@ async def search(query: str) -> str:
     sources = await _sources(response)
     if not sources:
         return summary
-    lines = "\n".join(f"  [{i}] {title} — {url}" for i, (title, url) in enumerate(sources, 1))
+    lines = "\n".join(f"  [{i}] {title}, {url}" for i, (title, url) in enumerate(sources, 1))
     return f"{summary}\n\nSources:\n{lines}"
 
 

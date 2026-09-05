@@ -173,7 +173,7 @@ def revise_overview(
     reader deciding which one to believe.
     """
     if not slug(title):
-        return False, "That title has no usable filename in it — give it words."
+        return False, "That title has no usable filename in it, give it words."
 
     now = datetime.now(timezone.utc)
     meta: dict = {
@@ -261,9 +261,9 @@ def write_index(directory: Path) -> None:
     """
     lines = [f"# {directory.name.replace('-', ' ')}", ""]
     if (directory / OVERVIEW).is_file():
-        lines += ["- [Overview](overview.md) — what is true now"]
+        lines += ["- [Overview](overview.md), what is true now"]
     if (directory / LOG).is_file():
-        lines += ["- [Log](log.md) — what changed, and when"]
+        lines += ["- [Log](log.md), what changed, and when"]
 
     pages = sorted((directory / SOURCES).glob("*.md")) if (directory / SOURCES).is_dir() else []
     if pages:
